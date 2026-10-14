@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 體感防守小遊戲</title>
-    <!-- 引入 p5.js 與 ml5.js 函式庫 -->
+    <!-- 引入 p5.js 與最新 ml5.js 函式庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
     <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
     <style>
@@ -45,7 +45,7 @@
     <div class="info-panel" id="status-text">載入模型中，請允許使用攝影機...</div>
 
     <script>
-        // 更新為您的最新模型網址
+        // 您的 Teachable Machine 模型網址
         let imageModelURL = 'https://teachablemachine.withgoogle.com/models/GlpcKNqid/';
         
         let classifier;
@@ -59,11 +59,11 @@
         let playerSize = 60;
         let score = 0;
         let lives = 3;
-        
-        // 障礙物（炸彈）變數
         let obstacles = [];
+        let isEvaluating = false;
 
         function preload() {
+            // 載入圖片分類模型
             classifier = ml5.imageClassifier(imageModelURL + 'model.json');
         }
 
@@ -71,11 +71,12 @@
             let canvas = createCanvas(640, 480);
             canvas.parent('canvas-container');
             
-            video = createCapture(VIDEO);
-            video.size(640, 480);
-            video.hide();
-
-            classifyVideo();
+            video = createCapture(VIDEO, function() {
+                video.size(640, 480);
+                video.hide();
+                // 啟動連續辨識迴圈
+                startClassifying();
+            });
 
             // 初始化玩家位置在畫面下方中央
             playerX = width / 2;
@@ -96,12 +97,12 @@
             image(video, 0, 0, width, height);
             pop();
 
-            // 2. 根據辨識結果直接更新玩家位置（只要有抓到分類就移動，避免卡住）
+            // 2. 根據辨識結果更新玩家位置
             let lowerPred = prediction.toLowerCase();
             if (lowerPred.includes("left") || lowerPred.includes("左")) {
-                playerX -= 10; // 往左移動
+                playerX -= 12; // 往左移動
             } else if (lowerPred.includes("right") || lowerPred.includes("右")) {
-                playerX += 10; // 往右移動
+                playerX += 12; // 往右移動
             }
 
             // 限制玩家不能跑出畫面外
@@ -164,9 +165,25 @@
             text("Score: " + score, 20, 35);
             text("Lives: " + "❤️".repeat(Math.max(0, lives)), width - 150, 35);
 
-            // 更新下方狀態列（包含即時偵測到的原始標籤，方便看有沒有對應到）
+            // 更新下方狀態列
             document.getElementById("status-text").innerText = 
                 `辨識結果: [ ${prediction} ] (${nf(confidence * 100, 0, 0)}%) | 分數: ${score} | 生命: ${lives}/3`;
+        }
+
+        async function startClassifying() {
+            if (!classifier || !video) return;
+            try {
+                // 使用最新 ml5.js 的 async classify 寫法
+                let results = await classifier.classify(video);
+                if (results && results.length > 0) {
+                    prediction = results[0].label;
+                    confidence = results[0].confidence;
+                }
+            } catch (err) {
+                console.error("辨識錯誤:", err);
+            }
+            // 循環持續辨識
+            setTimeout(startClassifying, 100);
         }
 
         function spawnObstacle() {
@@ -190,20 +207,6 @@
             textSize(20);
             text("重新整理網頁即可重新開始遊戲", width / 2, height / 2 + 40);
             noLoop();
-        }
-
-        function classifyVideo() {
-            classifier.classify(video, gotResult);
-        }
-
-        function gotResult(error, results) {
-            if (error) {
-                console.error(error);
-                return;
-            }
-            prediction = results[0].label;
-            confidence = results[0].confidence;
-            classifyVideo();
         }
     </script>
 </body>
