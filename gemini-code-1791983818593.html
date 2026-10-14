@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 體感防守小遊戲</title>
+    <!-- 引入 p5.js 與 ml5.js 函式庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            background-color: #1a1a2e;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { color: #e94560; margin-bottom: 5px; }
+        #canvas-container {
+            margin: 15px auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            display: inline-block;
+        }
+        .info-panel {
+            font-size: 20px;
+            background: #16213e;
+            padding: 12px 24px;
+            border-radius: 8px;
+            display: inline-block;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 1px solid #0f3460;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AI 體感防守小遊戲</h1>
+    <p>操作說明：身體往<strong>左傾斜</strong>控制角色向左，往<strong>右傾斜</strong>控制角色向右！躲避掉落的紅色炸彈！</p>
+
+    <div id="canvas-container"></div>
+    <br>
+    <div class="info-panel" id="status-text">載入模型中，請允許使用攝影機...</div>
+
+    <script>
+        // *** 請替換成你的 Teachable Machine 模型網址 ***
+        let imageModelURL = 'https://teachablemachine.withgoogle.com/models/你的模型ID/';
+        
+        let classifier;
+        let video;
+        let flippedVideo;
+        let prediction = "等待中...";
+        let confidence = 0.0;
+
+        // 遊戲變數
+        let playerX;
+        let playerY;
+        let playerSize = 50;
+        let score = 0;
+        let lives = 3;
+        
+        // 障礙物（炸彈）變數
+        let obstacles = [];
+
+        function preload() {
+            classifier = ml5.imageClassifier(imageModelURL + 'model.json');
+        }
+
+        function setup() {
+            let canvas = createCanvas(640, 480);
+            canvas.parent('canvas-container');
+            
+            video = createCapture(VIDEO);
+            video.size(640, 480);
+            video.hide();
+
+            flippedVideo = ml5.flipImage(video);
+            classifyVideo();
+
+            // 初始化玩家位置在畫面下方中央
+            playerX = width / 2;
+            playerY = height - 60;
+
+            // 每 1.5 秒生成一個障礙物
+            setInterval(spawnObstacle, 1500);
+        }
+
+        function draw() {
+            background(20, 20, 35);
+            
+            // 1. 繪製半透明的攝影機背景（讓玩家看得到自己）
+            tint(255, 100);
+            image(flippedVideo, 0, 0);
+            noTint();
+
+            // 2. 根據辨識結果更新玩家位置
+            if (confidence > 0.80) {
+                if (prediction === "Left") {
+                    playerX -= 7; // 往左移動
+                } else if (prediction === "Right") {
+                    playerX += 7; // 往右移動
+                }
+            }
+
+            // 限制玩家不能跑出畫面外
+            playerX = constrain(playerX, playerSize / 2, width - playerSize / 2);
+
+            // 3. 繪製玩家（藍色圓形機器人）
+            fill(0, 210, 255);
+            noStroke();
+            ellipse(playerX, playerY, playerSize, playerSize);
+            fill(255);
+            textSize(14);
+            textAlign(CENTER);
+            text("玩家", playerX, playerY + 5);
+
+            // 4. 更新與繪製障礙物（紅色炸彈）
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.y += obs.speed;
+
+                // 繪製障礙物
+                fill(255, 75, 75);
+                ellipse(obs.x, obs.y, obs.r, obs.r);
+
+                // 碰撞檢測（玩家與障礙物距離）
+                let d = dist(playerX, playerY, obs.x, obs.y);
+                if (d < (playerSize / 2 + obs.r / 2)) {
+                    lives--; // 扣血
+                    obstacles.splice(i, 1); // 移除該障礙物
+                    if (lives <= 0) {
+                        gameOver();
+                    }
+                    continue;
+                }
+
+                // 如果掉落到畫面下方，代表躲避成功，加分
+                if (obs.y > height + obs.r) {
+                    score += 10;
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // 5. 顯示 UI 分數與生命值
+            fill(255);
+            textSize(20);
+            textAlign(LEFT);
+            text("分數: " + score, 20, 35);
+            text("生命值: " + "❤️".repeat(Math.max(0, lives)), 20, 65);
+
+            // 更新下方文字框狀態
+            document.getElementById("status-text").innerText = 
+                `目前動作: ${prediction} (信心度: ${nf(confidence * 100, 0, 1)}%) | 分數: ${score}`;
+        }
+
+        function spawnObstacle() {
+            if (lives > 0) {
+                obstacles.push({
+                    x: random(40, width - 40),
+                    y: -30,
+                    r: 40,
+                    speed: random(3, 6)
+                });
+            }
+        }
+
+        function gameOver() {
+            background(0, 150);
+            fill(255, 50, 50);
+            textSize(48);
+            textAlign(CENTER, CENTER);
+            text("GAME OVER", width / 2, height / 2 - 20);
+            fill(255);
+            textSize(20);
+            text("重新整理網頁即可重新開始遊戲", width / 2, height / 2 + 30);
+            noLoop(); // 停止遊戲循環
+        }
+
+        function classifyVideo() {
+            flippedVideo = ml5.flipImage(video);
+            classifier.classify(flippedVideo, gotResult);
+        }
+
+        function gotResult(error, results) {
+            if (error) {
+                console.error(error);
+                return;
+            }
+            prediction = results[0].label;
+            confidence = results[0].confidence;
+            classifyVideo();
+        }
+    </script>
+</body>
+</html>
