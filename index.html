@@ -38,14 +38,14 @@
 <body>
 
     <h1>AI 體感防守小遊戲</h1>
-    <p>操作說明：左手<strong>舉高</strong>控制角色向左，右手<strong>舉高</strong>控制角色向右！躲避掉落的紅色炸彈！</p>
+    <p>操作說明：身體往<strong>左傾斜</strong>控制角色向左，往<strong>右傾斜</strong>控制角色向右！躲避掉落的紅色炸彈！</p>
 
     <div id="canvas-container"></div>
     <br>
     <div class="info-panel" id="status-text">載入模型中，請允許使用攝影機...</div>
 
     <script>
-        // 已代入您的 Teachable Machine 模型網址
+        // 更新為您的最新模型網址
         let imageModelURL = 'https://teachablemachine.withgoogle.com/models/GlpcKNqid/';
         
         let classifier;
@@ -92,34 +92,32 @@
             push();
             translate(width, 0);
             scale(-1, 1);
-            tint(255, 120);
+            tint(255, 140);
             image(video, 0, 0, width, height);
             pop();
 
-            // 2. 根據辨識結果更新玩家位置（已改為小寫 "left" 與 "right"）
-            if (confidence > 0.70) {
-                if (prediction === "left") {
-                    playerX -= 8; // 往左移動
-                } else if (prediction === "right") {
-                    playerX += 8; // 往右移動
-                }
+            // 2. 根據辨識結果直接更新玩家位置（只要有抓到分類就移動，避免卡住）
+            let lowerPred = prediction.toLowerCase();
+            if (lowerPred.includes("left") || lowerPred.includes("左")) {
+                playerX -= 10; // 往左移動
+            } else if (lowerPred.includes("right") || lowerPred.includes("右")) {
+                playerX += 10; // 往右移動
             }
 
             // 限制玩家不能跑出畫面外
             playerX = constrain(playerX, playerSize / 2, width - playerSize / 2);
 
-            // 3. 繪製明顯的「玩家位置指示器」（藍色發光圓圈與箭頭）
+            // 3. 繪製明顯的「玩家位置指示器」
             push();
             noFill();
             stroke(0, 255, 255);
             strokeWeight(4);
-            ellipse(playerX, playerY, playerSize + 10, playerSize + 10); // 外發光框
+            ellipse(playerX, playerY, playerSize + 10, playerSize + 10);
             
-            fill(0, 210, 255, 220);
+            fill(0, 210, 255, 230);
             noStroke();
-            ellipse(playerX, playerY, playerSize, playerSize); // 本體
+            ellipse(playerX, playerY, playerSize, playerSize);
 
-            // 繪製箭頭與文字標示
             fill(255);
             textSize(12);
             textAlign(CENTER, CENTER);
@@ -133,7 +131,6 @@
                 let obs = obstacles[i];
                 obs.y += obs.speed;
 
-                // 繪製障礙物外觀
                 fill(255, 50, 50);
                 noStroke();
                 ellipse(obs.x, obs.y, obs.r, obs.r);
@@ -142,18 +139,18 @@
                 textAlign(CENTER, CENTER);
                 text("BOMB", obs.x, obs.y);
 
-                // 碰撞檢測（玩家與炸彈距離）
+                // 碰撞檢測
                 let d = dist(playerX, playerY, obs.x, obs.y);
                 if (d < (playerSize / 2 + obs.r / 2)) {
-                    lives--; // 扣血
-                    obstacles.splice(i, 1); // 移除該炸彈
+                    lives--;
+                    obstacles.splice(i, 1);
                     if (lives <= 0) {
                         gameOver();
                     }
                     continue;
                 }
 
-                // 如果掉落到畫面下方，代表躲避成功，加分
+                // 躲避成功加分
                 if (obs.y > height + obs.r) {
                     score += 10;
                     obstacles.splice(i, 1);
@@ -167,9 +164,9 @@
             text("Score: " + score, 20, 35);
             text("Lives: " + "❤️".repeat(Math.max(0, lives)), width - 150, 35);
 
-            // 更新下方狀態列（包含座標提示）
+            // 更新下方狀態列（包含即時偵測到的原始標籤，方便看有沒有對應到）
             document.getElementById("status-text").innerText = 
-                `模型已載入 | 動作: ${prediction} (${nf(confidence * 100, 0, 0)}%) | 分數: ${score} | 生命: ${lives}/3 | 玩家核心位置: (${int(playerX)}, ${int(playerY)})`;
+                `辨識結果: [ ${prediction} ] (${nf(confidence * 100, 0, 0)}%) | 分數: ${score} | 生命: ${lives}/3`;
         }
 
         function spawnObstacle() {
@@ -192,7 +189,7 @@
             fill(255);
             textSize(20);
             text("重新整理網頁即可重新開始遊戲", width / 2, height / 2 + 40);
-            noLoop(); // 停止遊戲循環
+            noLoop();
         }
 
         function classifyVideo() {
