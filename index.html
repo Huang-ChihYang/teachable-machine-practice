@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 體感防守小遊戲</title>
-    <!-- 引入 p5.js 與最新 ml5.js 函式庫 -->
+    <!-- 引入 p5.js 與 Teachable Machine 官方函式庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
-    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -33,46 +34,103 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             border: 1px solid #0f3460;
         }
+        #webcam-preview {
+            display: none; /* 隱藏官方的小視窗，我們直接畫在 p5.js 画布裡 */
+        }
     </style>
 </head>
 <body>
 
     <h1>AI 體感防守小遊戲</h1>
-    <p>操作說明：對著鏡頭擺動身體，或使用鍵盤 <strong>← 鍵 / → 鍵</strong> 控制移動！躲避紅色炸彈！</p>
+    <p>操作說明：點擊下方按鈕啟動攝影機，身體往<strong>左/右傾斜</strong>或使用鍵盤 <strong>← / →</strong> 控制移動！</p>
+    
+    <button type="button" onclick="initGame()" style="padding: 10px 20px; font-size: 16px; background-color: #e94560; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px;">點擊這裡開始遊戲</button>
 
     <div id="canvas-container"></div>
     <br>
-    <div class="info-panel" id="status-text">載入模型與攝影機中...</div>
+    <div class="info-panel" id="status-text">請先點擊上方按鈕以啟動遊戲與攝影機...</div>
+    
+    <div id="webcam-preview"></div>
 
     <script>
-        // 請確保這裡填入您最新的模型網址（結尾要有斜線）
-        let imageModelURL = 'https://teachablemachine.withgoogle.com/models/GlpcKNqid/';
-        
-        let classifier;
-        let video;
-        let prediction = "等待辨識...";
-        let allResults = [];
+        const URL = "https://teachablemachine.withgoogle.com/models/GlpcKNqid/";
 
-        let playerX;
-        let playerY;
+        let model, webcam, maxPredictions;
+        let gameStarted = false;
+
+        // 遊戲變數
+        let playerX, playerY;
         let playerSize = 60;
         let score = 0;
         let lives = 3;
         let obstacles = [];
+        let currentPredictionText = "等待啟動...";
 
-        function preload() {
-            classifier = ml5.imageClassifier(imageModelURL + 'model.json');
+        async function initGame() {
+            if (gameStarted) return;
+            
+            document.getElementById("status-text").innerText = "正在載入模型與攝影機...";
+
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            // 載入官方模型
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            // 設定攝影機
+            const flip = true; 
+            webcam = new tmImage.Webcam(640, 480, flip); 
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            // 把攝影機畫面放到隱藏區塊
+            document.getElementById("webcam-preview").appendChild(webcam.canvas);
+
+            gameStarted = true;
+            document.getElementById("status-text").innerText = "遊戲已開始！";
+        }
+
+        async function loop() {
+            webcam.update(); // 更新攝影機畫面
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            if (!gameStarted) return;
+            const prediction = await model.predict(webcam.canvas);
+            
+            // 找出機率最高的那一個動作
+            let highestProb = 0;
+            let bestClass = "";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                let prob = prediction[i].probability;
+                let className = prediction[i].className.toLowerCase();
+                
+                if (prob > highestProb) {
+                    highestProb = prob;
+                    bestClass = className;
+                }
+            }
+
+            currentPredictionText = `${bestClass} (${(highestProb * 100).toFixed(0)}%)`;
+
+            // 根據辨識結果控制玩家移動
+            if (highestProb > 0.65) {
+                if (bestClass.includes("left") || bestClass.includes("左")) {
+                    playerX -= 12;
+                } else if (bestClass.includes("right") || bestClass.includes("右")) {
+                    playerX += 12;
+                }
+            }
         }
 
         function setup() {
             let canvas = createCanvas(640, 480);
             canvas.parent('canvas-container');
-            
-            video = createCapture(VIDEO, function() {
-                video.size(640, 480);
-                video.hide();
-                classifyVideo();
-            });
 
             playerX = width / 2;
             playerY = height - 70;
@@ -82,38 +140,22 @@
 
         function draw() {
             background(20, 20, 35);
-            
-            // 1. 繪製鏡像攝影機畫面
-            push();
-            translate(width, 0);
-            scale(-1, 1);
-            tint(255, 140);
-            image(video, 0, 0, width, height);
-            pop();
 
-            // 2. 移動控制：結合鍵盤保底與強效 AI 辨識對應
+            // 1. 如果攝影機已啟動，將官方 webcam 的畫面畫到 p5.js 的畫布上
+            if (gameStarted && webcam && webcam.canvas) {
+                push();
+                tint(255, 140);
+                image(webcam.canvas, 0, 0, width, height);
+                pop();
+            }
+
+            // 2. 鍵盤保底控制（← / → 鍵）
             if (keyIsDown(LEFT_ARROW)) {
-                playerX -= 12; 
-                prediction = "鍵盤控制：向左";
+                playerX -= 12;
+                currentPredictionText = "鍵盤：向左";
             } else if (keyIsDown(RIGHT_ARROW)) {
-                playerX += 12; 
-                prediction = "鍵盤控制：向右";
-            } else if (allResults.length >= 2) {
-                // 直接依據 Teachable Machine 的分類順序判斷：
-                // 假設陣列第 0 個類別（上方）代表左邊，第 1 個類別（下方）代表右邊
-                let topResult = allResults[0];
-                prediction = `${topResult.label} (${nf(topResult.confidence * 100, 0, 0)}%)`;
-
-                if (topResult.confidence > 0.60) {
-                    // 如果最高機率是第 0 個類別（不管它叫 Class 5 還是 left），往左移
-                    if (topResult === allResults[0] && allResults[0].confidence > allResults[1].confidence) {
-                        // 這裡我們讓第一個類別控制向左，第二個類別控制向右
-                        // 如果您希望反過來，把減號改加號即可
-                        playerX -= 12; 
-                    } else {
-                        playerX += 12;
-                    }
-                }
+                playerX += 12;
+                currentPredictionText = "鍵盤：向右";
             }
 
             // 限制玩家不能跑出畫面外
@@ -138,7 +180,7 @@
             text("⬇", playerX, playerY + 10);
             pop();
 
-            // 4. 更新與繪製障礙物
+            // 4. 更新與繪製障礙物（炸彈）
             for (let i = obstacles.length - 1; i >= 0; i--) {
                 let obs = obstacles[i];
                 obs.y += obs.speed;
@@ -175,23 +217,14 @@
             text("Score: " + score, 20, 35);
             text("Lives: " + "❤️".repeat(Math.max(0, lives)), width - 150, 35);
 
-            document.getElementById("status-text").innerText = 
-                `辨識狀態: [ ${prediction} ] | 分數: ${score} | 生命: ${lives}/3`;
-        }
-
-        function classifyVideo() {
-            classifier.classify(video, (error, results) => {
-                if (error) {
-                    console.error(error);
-                    return;
-                }
-                allResults = results;
-                classifyVideo();
-            });
+            if (gameStarted) {
+                document.getElementById("status-text").innerText = 
+                    `辨識結果: [ ${currentPredictionText} ] | 分數: ${score} | 生命: ${lives}/3`;
+            }
         }
 
         function spawnObstacle() {
-            if (lives > 0) {
+            if (gameStarted && lives > 0) {
                 obstacles.push({
                     x: random(40, width - 40),
                     y: -30,
