@@ -45,12 +45,11 @@
     <div class="info-panel" id="status-text">載入模型中，請允許使用攝影機...</div>
 
     <script>
-        // *** 請替換成你的 Teachable Machine 模型網址 ***
+        // *** 請確認這裡填入你正確的 Teachable Machine 模型網址 ***
         let imageModelURL = 'https://teachablemachine.withgoogle.com/models/vRO83hTPu/';
         
         let classifier;
         let video;
-        let flippedVideo;
         let prediction = "等待中...";
         let confidence = 0.0;
 
@@ -76,7 +75,7 @@
             video.size(640, 480);
             video.hide();
 
-            flippedVideo = ml5.flipImage(video);
+            // 開始進行辨識
             classifyVideo();
 
             // 初始化玩家位置在畫面下方中央
@@ -90,10 +89,13 @@
         function draw() {
             background(20, 20, 35);
             
-            // 1. 繪製半透明的攝影機背景（讓玩家看得到自己）
+            // 1. 繪製鏡像攝影機畫面（使用 p5.js 的推入與水平翻轉）
+            push();
+            translate(width, 0);
+            scale(-1, 1);
             tint(255, 100);
-            image(flippedVideo, 0, 0);
-            noTint();
+            image(video, 0, 0, width, height);
+            pop();
 
             // 2. 根據辨識結果更新玩家位置
             if (confidence > 0.80) {
@@ -107,7 +109,7 @@
             // 限制玩家不能跑出畫面外
             playerX = constrain(playerX, playerSize / 2, width - playerSize / 2);
 
-            // 3. 繪製玩家（藍色圓形機器人）
+            // 3. 繪製玩家（藍色圓形）
             fill(0, 210, 255);
             noStroke();
             ellipse(playerX, playerY, playerSize, playerSize);
@@ -179,8 +181,7 @@
         }
 
         function classifyVideo() {
-            flippedVideo = ml5.flipImage(video);
-            classifier.classify(flippedVideo, gotResult);
+            classifier.classify(video, gotResult);
         }
 
         function gotResult(error, results) {
