@@ -38,13 +38,14 @@
 <body>
 
     <h1>AI 體感防守小遊戲</h1>
-    <p>操作說明：對著鏡頭擺動，或隨時使用鍵盤 <strong>← 鍵 / → 鍵</strong> 控制移動！躲避紅色炸彈！</p>
+    <p>操作說明：對著鏡頭擺動身體，或使用鍵盤 <strong>← 鍵 / → 鍵</strong> 控制移動！躲避紅色炸彈！</p>
 
     <div id="canvas-container"></div>
     <br>
     <div class="info-panel" id="status-text">載入模型與攝影機中...</div>
 
     <script>
+        // 請確保這裡填入您最新的模型網址（結尾要有斜線）
         let imageModelURL = 'https://teachablemachine.withgoogle.com/models/GlpcKNqid/';
         
         let classifier;
@@ -90,7 +91,7 @@
             image(video, 0, 0, width, height);
             pop();
 
-            // 2. 移動控制：結合鍵盤保底與「直接依陣列順序」控制
+            // 2. 移動控制：結合鍵盤保底與強效 AI 辨識對應
             if (keyIsDown(LEFT_ARROW)) {
                 playerX -= 12; 
                 prediction = "鍵盤控制：向左";
@@ -98,41 +99,20 @@
                 playerX += 12; 
                 prediction = "鍵盤控制：向右";
             } else if (allResults.length >= 2) {
-                // 直接抓取機率最高的那一個類別（陣列第 0 個）
+                // 直接依據 Teachable Machine 的分類順序判斷：
+                // 假設陣列第 0 個類別（上方）代表左邊，第 1 個類別（下方）代表右邊
                 let topResult = allResults[0];
                 prediction = `${topResult.label} (${nf(topResult.confidence * 100, 0, 0)}%)`;
 
-                // 假設你在 Teachable Machine 訓練的第一個類別（上方）代表左邊，第二個代表右邊
-                // 如果結果是陣列中的第 0 個類別（通常對應你訓練的第一個 Class）
-                if (topResult.confidence > 0.55) {
-                    // 檢查它是不是你訓練的第一個類別名稱（比對結果陣列順序）
-                    if (topResult.label === allResults[0].label) {
-                        // 讓第一個類別控制向左，第二個類別控制向右
-                        // 這裡我們簡單用：若它是所有類別裡的第一個，就判定為左或右
-                    }
-                }
-                
-                // 更直覺的強制對應：我們看當前最高機率是第 0 個還是第 1 個類別
-                // 假設第 0 個類別（你畫面上的第一個框）代表向左：
-                if (topResult.label.toLowerCase().includes("left") || 
-                    topResult.label.toLowerCase().includes("左") || 
-                    topResult.label === "Class 5" || // 如果還沒重新訓練完的暫時對應
-                    topResult === allResults[0] && topResult.confidence > 0.6) {
-                    
-                    // 為了保險，我們直接看是第一個還是第二個區塊機率高
-                    // 這裡我們讓「第一個類別」往左，「第二個類別」往右
-                }
-
-                // 萬無一失的硬體對應：直接用結果陣列排序來分左右
-                // 假設 results[0] 是第一個類別，results[1] 是第二個類別
-                if (allResults[0].confidence > allResults[1].confidence) {
-                    if (allResults[0].label.toLowerCase().includes("right") || allResults[0].label.toLowerCase().includes("右") || allResults[0].label === "Class 6") {
-                        playerX += 12;
+                if (topResult.confidence > 0.60) {
+                    // 如果最高機率是第 0 個類別（不管它叫 Class 5 還是 left），往左移
+                    if (topResult === allResults[0] && allResults[0].confidence > allResults[1].confidence) {
+                        // 這裡我們讓第一個類別控制向左，第二個類別控制向右
+                        // 如果您希望反過來，把減號改加號即可
+                        playerX -= 12; 
                     } else {
-                        playerX -= 12;
+                        playerX += 12;
                     }
-                } else {
-                    playerX += 12;
                 }
             }
 
