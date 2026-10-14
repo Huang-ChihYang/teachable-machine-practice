@@ -25,7 +25,7 @@
             display: inline-block;
         }
         .info-panel {
-            font-size: 18px;
+            font-size: 16px;
             background: #16213e;
             padding: 12px 24px;
             border-radius: 8px;
@@ -38,32 +38,28 @@
 <body>
 
     <h1>AI 體感防守小遊戲</h1>
-    <p>操作說明：身體往<strong>左傾斜</strong>控制角色向左，往<strong>右傾斜</strong>控制角色向右！躲避掉落的紅色炸彈！</p>
+    <p>操作說明：身體往<strong>左/右傾斜</strong>，或者直接按鍵盤的 <strong>← 鍵 / → 鍵</strong> 控制移動！躲避紅色炸彈！</p>
 
     <div id="canvas-container"></div>
     <br>
-    <div class="info-panel" id="status-text">載入模型中，請允許使用攝影機...</div>
+    <div class="info-panel" id="status-text">載入模型與攝影機中...</div>
 
     <script>
-        // 您的 Teachable Machine 模型網址
         let imageModelURL = 'https://teachablemachine.withgoogle.com/models/GlpcKNqid/';
         
         let classifier;
         let video;
-        let prediction = "等待中...";
+        let prediction = "載入中...";
         let confidence = 0.0;
 
-        // 遊戲變數
         let playerX;
         let playerY;
         let playerSize = 60;
         let score = 0;
         let lives = 3;
         let obstacles = [];
-        let isEvaluating = false;
 
         function preload() {
-            // 載入圖片分類模型
             classifier = ml5.imageClassifier(imageModelURL + 'model.json');
         }
 
@@ -71,18 +67,17 @@
             let canvas = createCanvas(640, 480);
             canvas.parent('canvas-container');
             
+            // 啟動攝影機
             video = createCapture(VIDEO, function() {
                 video.size(640, 480);
                 video.hide();
-                // 啟動連續辨識迴圈
-                startClassifying();
+                // 開始辨識
+                classifyVideo();
             });
 
-            // 初始化玩家位置在畫面下方中央
             playerX = width / 2;
             playerY = height - 70;
 
-            // 每 1.5 秒生成一個障礙物
             setInterval(spawnObstacle, 1500);
         }
 
@@ -97,18 +92,28 @@
             image(video, 0, 0, width, height);
             pop();
 
-            // 2. 根據辨識結果更新玩家位置
+            // 2. 移動控制：同時支援「AI 辨識」與「鍵盤左右方向鍵（保底）」
             let lowerPred = prediction.toLowerCase();
-            if (lowerPred.includes("left") || lowerPred.includes("左")) {
-                playerX -= 12; // 往左移動
-            } else if (lowerPred.includes("right") || lowerPred.includes("右")) {
-                playerX += 12; // 往右移動
+            
+            if (keyIsDown(LEFT_ARROW)) {
+                playerX -= 12; // 按鍵盤 ← 往左
+                prediction = "鍵盤控制：向左";
+            } else if (keyIsDown(RIGHT_ARROW)) {
+                playerX += 12; // 按鍵盤 → 往右
+                prediction = "鍵盤控制：向右";
+            } else {
+                // AI 辨識控制
+                if (lowerPred.includes("left") || lowerPred.includes("左")) {
+                    playerX -= 12;
+                } else if (lowerPred.includes("right") || lowerPred.includes("右")) {
+                    playerX += 12;
+                }
             }
 
             // 限制玩家不能跑出畫面外
             playerX = constrain(playerX, playerSize / 2, width - playerSize / 2);
 
-            // 3. 繪製明顯的「玩家位置指示器」
+            // 3. 繪製玩家位置指示器
             push();
             noFill();
             stroke(0, 255, 255);
@@ -127,7 +132,7 @@
             text("⬇", playerX, playerY + 10);
             pop();
 
-            // 4. 更新與繪製障礙物（紅色炸彈）
+            // 4. 更新與繪製障礙物
             for (let i = obstacles.length - 1; i >= 0; i--) {
                 let obs = obstacles[i];
                 obs.y += obs.speed;
@@ -151,7 +156,6 @@
                     continue;
                 }
 
-                // 躲避成功加分
                 if (obs.y > height + obs.r) {
                     score += 10;
                     obstacles.splice(i, 1);
@@ -167,23 +171,21 @@
 
             // 更新下方狀態列
             document.getElementById("status-text").innerText = 
-                `辨識結果: [ ${prediction} ] (${nf(confidence * 100, 0, 0)}%) | 分數: ${score} | 生命: ${lives}/3`;
+                `AI 狀態: [ ${prediction} ] (${nf(confidence * 100, 0, 0)}%) | 分數: ${score} | 生命: ${lives}/3`;
         }
 
-        async function startClassifying() {
-            if (!classifier || !video) return;
-            try {
-                // 使用最新 ml5.js 的 async classify 寫法
-                let results = await classifier.classify(video);
-                if (results && results.length > 0) {
-                    prediction = results[0].label;
-                    confidence = results[0].confidence;
+        function classifyVideo() {
+            classifier.classify(video, (error, results) => {
+                if (error) {
+                    console.error(error);
+                    return;
                 }
-            } catch (err) {
-                console.error("辨識錯誤:", err);
-            }
-            // 循環持續辨識
-            setTimeout(startClassifying, 100);
+                prediction = results[0].label;
+                confidence = results[0].confidence;
+                
+                // 繼續下一輪辨識
+                classifyVideo();
+            });
         }
 
         function spawnObstacle() {
